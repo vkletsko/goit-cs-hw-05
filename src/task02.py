@@ -1,35 +1,46 @@
-import re
-import aiohttp
-import matplotlib.pyplot as plt
-import asyncio
-from functools import reduce
+from concurrent.futures import ThreadPoolExecutor
+from collections import defaultdict
+from matplotlib import pyplot as plt
 
+import requests
 
-async def fetch_text(url):
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as response:
-            if response.status == 200:
-                return await response.text()
-            else:
-                print("Failed to retrieve the text from the URL.")
-                return ""
+def get_text(url):
+    try:
+        response = requests.get(url)
+        response.raise_for_status()  # Перевірка на помилки HTTP
+        return response.text
+    except requests.RequestException as e:
+        return None
 
+def map_function(word):
+    return word, 1
 
-async def map_reduce(text_chunk):
-    words = re.findall(r'\b\w+\b', text_chunk.lower())
-    word_count = {}
-    for word in words:
-        word_count[word] = word_count.get(word, 0) + 1
-    return word_count
+def shuffle_function(mapped_values):
+    shuffled = defaultdict(list)
+    for key, value in mapped_values:
+        shuffled[key].append(value)
+    return shuffled.items()
 
+def reduce_function(key_values):
+    key, values = key_values
+    return key, sum(values)
 
-def reduce_word_counts(word_counts1, word_counts2):
-    word_count_total = {}
-    for word, count in word_counts1.items():
-        word_count_total[word] = word_count_total.get(word, 0) + count
-    for word, count in word_counts2.items():
-        word_count_total[word] = word_count_total.get(word, 0) + count
-    return word_count_total
+# Виконання MapReduce
+def map_reduce(text):
+    words = text.split()
+
+    # Паралельний Мапінг
+    with ThreadPoolExecutor() as executor:
+        mapped_values = list(executor.map(map_function, words))
+
+    # Крок 2: Shuffle
+    shuffled_values = shuffle_function(mapped_values)
+
+    # Паралельна Редукція
+    with ThreadPoolExecutor() as executor:
+        reduced_values = list(executor.map(reduce_function, shuffled_values))
+
+    return dict(reduced_values)
 
 
 def visualize_top_words(word_freq, top_n=10):
@@ -48,21 +59,16 @@ def visualize_top_words(word_freq, top_n=10):
     plt.show()
 
 
-async def main(url):
-    text = await fetch_text(url)
-    if text:
-        chunk_size = len(text) // 10
-        chunks = [text[i:i+chunk_size]
-                  for i in range(0, len(text), chunk_size)]
-
-        mapped_results = await asyncio.gather(*(map_reduce(chunk) for chunk in chunks))
-
-        reduced_result = reduce(reduce_word_counts, mapped_results)
-        visualize_top_words(reduced_result)
-    else:
-        print("No text retrieved from the URL.")
-
-
-if __name__ == "__main__":
+if __name__ == '__main__':
+    # Вхідний текст для обробки
     url = "https://gutenberg.net.au/ebooks05/0500781.txt"
-    asyncio.run(main(url))
+    text = get_text(url)
+    if text:
+        # Виконання MapReduce на вхідному тексті
+        result = map_reduce(text)
+
+        visualize_top_words(result)
+
+        print("Результат підрахунку слів:", result)
+    else:
+        print("Помилка: Не вдалося отримати вхідний текст.")
