@@ -5,5 +5,8 @@
 ### Master of degree from university
 
 
-### Результат виконання завдання 2
+### Task 2 chart
+### for text from resource 
+`https://gutenberg.net.au/ebooks05/0500781.txt`
+```
 ![Count of words Visualization](doc/chart.png)
